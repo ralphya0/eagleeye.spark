@@ -14,30 +14,33 @@ import com.yaoxin.eagleeye.spark.vo.RealtimeIndicatorsVO;
  */
 public interface StorageManager {
 
-	public RealtimeIndicatorsVO getRealtimeIndicator();
+	public RealtimeIndicatorsVO getBackwardRealtimeIndicator();
 	
-	public void markRawRecord(String timeFrame, String id);
+	public void markBackwardRawRecord(String timeFrame, String id);
 	
-	public void markRealtimeIndicators(String timeFrame, String id);
+	public void markBackwardRealtimeIndicators(String timeFrame, String id);
 	
-	public List<NetflowRecord> getAbnormalRawRecord(String abnormalId);
+	public List<NetflowRecord> getBackwardAbnormalRawRecord(String abnormalId);
 	
-	public List<RealtimeIndicatorsVO> getAbnormalRealtimeIndicators(String abnormalId);
+	public List<RealtimeIndicatorsVO> getBackwardAbnormalRealtimeIndicators(String abnormalId);
 	
-	public void unmarkRawRecordById(String id);
+	public void unmarkBackwardRawRecordById(String id);
 	
-	public void unmarkRealtimeIndicatorsById(String id);
+	public void unmarkBackwardRealtimeIndicatorsById(String id);
 	
-	public void unmarkRawRecordByInterval(String beginTime, String endTime, String id);
+	public void unmarkBackwardRawRecordByInterval(String beginTime, String endTime, String id);
 	
-	public void unmarkRealtimeIndicatorsByInterval(String beginTime, String endTime, String id);
+	public void unmarkBackwardRealtimeIndicatorsByInterval(String beginTime, String endTime, String id);
 	
 	public void addAbnormalRecord(AbnormalTrafficRecord r);
 	
-	public List<NetflowRecord> getRawRecordByInterval(String beginTime, String endTime);
+	public List<NetflowRecord> getBackwardRawRecordByInterval(String beginTime, String endTime);
 	
-	public List<RealtimeIndicatorsVO> getRealtimeIndicatorsByInterval(String beginTime, String endTime);
+	public List<RealtimeIndicatorsVO> getBackwardRealtimeIndicatorsByInterval(String beginTime, String endTime);
 	
-	public void addTmpTrafficRecord(AbnormalTrafficRecord r);
+	public void doClean(String sql);
+	
+	
+	//public void addTmpTrafficRecord(AbnormalTrafficRecord r);
 	
 }

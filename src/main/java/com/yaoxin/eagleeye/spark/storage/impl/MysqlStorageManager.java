@@ -27,24 +27,24 @@ import com.yaoxin.eagleeye.spark.vo.RealtimeIndicatorsVO;
  */
 public class MysqlStorageManager implements StorageManager{
 	
-	public final static String LOAD_REALTIME_INDICATOR = 
-			"select * from realtime_indicators order by time_frame desc limit 1";
-	public final static String MARK_RAW_RECORD = 
-			"update raw_records set no_deletion = 1, abnormal_id = '@' where m_date >= '#' and m_date < '&'";
-	public final static String MARK_REALTIME_INDICATORS = 
-			"update realtime_indicators set no_deletion = 1, abnormal_id = '@' where time_frame = '#'";
-	public final static String LOAD_ABNORMAL_RAW_RECORDS = 
-			"select * from raw_records where abnormal_id = '@'";
-	public final static String LOAD_ABNORMAL_INDICATORS = 
-			"select * from realtime_indicators where abnormal_id = '@'";
-	public final static String UNMARK_RAW_RECORD_BY_ID = 
-			"update raw_records set no_deletion = 0, abnormal_id = null where abnormal_id = '@'";
-	public final static String UNMARK_REALTIME_INDICATORS_BY_ID =
-			"update realtime_indicators set no_deletion = 0, abnormal_id = null where abnormal_id = '@'";
-	public final static String UNMARK_RAW_RECORD_BY_INTERVAL = 
-			"update raw_records set no_deletion = 0, abnormal_id = null where m_date >= '@' and m_date < '#' and abnormal_id = '$'";
-	public final static String UNMARK_REALTIME_INDICATORS_BY_INTERVAL =
-			"update realtime_indicators set no_deletion = 0, abnormal_id = null where time_frame >= '@' and time_frame < '#' and abnormal_id = '$'";
+	public final static String LOAD_BACKWARD_REALTIME_INDICATOR = 
+			"select * from backward_realtime_indicators order by time_frame desc limit 1";
+	public final static String MARK_BACKWARD_RAW_RECORD = 
+			"update backward_raw_records set no_deletion = 1, abnormal_id = '@' where m_date >= '#' and m_date < '&'";
+	public final static String MARK_BACKWARD_REALTIME_INDICATORS = 
+			"update backward_realtime_indicators set no_deletion = 1, abnormal_id = '@' where time_frame = '#'";
+	public final static String LOAD_BACKWARD_ABNORMAL_RAW_RECORDS = 
+			"select * from backward_raw_records where abnormal_id = '@'";
+	public final static String LOAD_BACKWARD_ABNORMAL_INDICATORS = 
+			"select * from backward_realtime_indicators where abnormal_id = '@'";
+	public final static String UNMARK_BACKWARD_RAW_RECORD_BY_ID = 
+			"update backward_raw_records set no_deletion = 0, abnormal_id = null where abnormal_id = '@'";
+	public final static String UNMARK_BACKWARD_REALTIME_INDICATORS_BY_ID =
+			"update backward_realtime_indicators set no_deletion = 0, abnormal_id = null where abnormal_id = '@'";
+	public final static String UNMARK_BACKWARD_RAW_RECORD_BY_INTERVAL = 
+			"update backward_raw_records set no_deletion = 0, abnormal_id = null where m_date >= '@' and m_date < '#' and abnormal_id = '$'";
+	public final static String UNMARK_BACKWARD_REALTIME_INDICATORS_BY_INTERVAL =
+			"update backward_realtime_indicators set no_deletion = 0, abnormal_id = null where time_frame >= '@' and time_frame < '#' and abnormal_id = '$'";
 	public final static String ADD_ABNORMAL_RECORD = 
 			"insert into abnormal_traffic_record(id, start_time, end_time, duration, start_point_deviation_ratio, "
 			+ "end_point_deviation_ratio, priority, max_bps, min_bps, avg_bps, outter_ip_num, top_10_outter_ips, "
@@ -53,10 +53,10 @@ public class MysqlStorageManager implements StorageManager{
 			+ "avg_ppf, max_bpf, min_bpf, avg_bpf, packets_less_than_500, pakcets_less_than_1000, packets_less_than_2000,"
 			+ "packets_large_than_2000, bytes_less_than_20000, bytes_less_than_100000, bytes_large_than_100000,"
 			+ "duration_less_than_1, duration_less_than_10, duration_large_than_10) values";
-	public final static String LOAD_RAW_RECORDS_BY_INTERVAL = 
-			"select * from raw_records where m_date >= '@' and m_date < '#'";
-	public final static String LOAD_ABNORMAL_INDICATORS_BY_INTERVAL = 
-			"select * from realtime_indicators where time_frame >= '@' and time_frame < '#'";
+	public final static String LOAD_BACKWARD_RAW_RECORDS_BY_INTERVAL = 
+			"select * from backward_raw_records where m_date >= '@' and m_date < '#'";
+	public final static String LOAD_BACKWARD_ABNORMAL_INDICATORS_BY_INTERVAL = 
+			"select * from backward_realtime_indicators where time_frame >= '@' and time_frame < '#'";
 	public final static String ADD_TMP_TRAFFIC_RECORD = 
 			"insert into tmp_traffic_record(start_time, end_time, duration, start_point_deviation_ratio, "
 			+ "end_point_deviation_ratio, priority, max_bps, min_bps, avg_bps, outter_ip_num, top_10_outter_ips, "
@@ -67,12 +67,12 @@ public class MysqlStorageManager implements StorageManager{
 			+ "duration_less_than_1, duration_less_than_10, duration_large_than_10) values";
 	
 	
-	public RealtimeIndicatorsVO getRealtimeIndicator() {
+	public RealtimeIndicatorsVO getBackwardRealtimeIndicator() {
 
 		try {
 			Connection conn = DBConnector.getConn();
 			Statement statement = conn.createStatement();
-			ResultSet rs = statement.executeQuery(LOAD_REALTIME_INDICATOR);
+			ResultSet rs = statement.executeQuery(LOAD_BACKWARD_REALTIME_INDICATOR);
 			
 			if(rs != null && rs.next()){
 				RealtimeIndicatorsVO vo = new RealtimeIndicatorsVO(rs.getInt(1), new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(rs.getTime(2)), rs.getDouble(3), 
@@ -99,13 +99,13 @@ public class MysqlStorageManager implements StorageManager{
 		return null;
 	}
 
-	public void markRawRecord(String timeFrame, String id) {
+	public void markBackwardRawRecord(String timeFrame, String id) {
 		try {
 			
 			String nTimeFrame = nextTimeFrame(timeFrame);
 			Connection conn = DBConnector.getConn();
 			
-			String sql = MARK_RAW_RECORD.replace("@", id).replace("#", timeFrame).replace("&", nTimeFrame);
+			String sql = MARK_BACKWARD_RAW_RECORD.replace("@", id).replace("#", timeFrame).replace("&", nTimeFrame);
 			
 			Statement statement = conn.createStatement();
 			statement.execute(sql);
@@ -124,12 +124,12 @@ public class MysqlStorageManager implements StorageManager{
 		}
 	}
 
-	public void markRealtimeIndicators(String timeFrame, String id) {
+	public void markBackwardRealtimeIndicators(String timeFrame, String id) {
 		try {
 			
 			Connection conn = DBConnector.getConn();
 			
-			String sql = MARK_REALTIME_INDICATORS.replace("@", id).replace("#", timeFrame);
+			String sql = MARK_BACKWARD_REALTIME_INDICATORS.replace("@", id).replace("#", timeFrame);
 			
 			Statement statement = conn.createStatement();
 			statement.execute(sql);
@@ -157,12 +157,12 @@ public class MysqlStorageManager implements StorageManager{
 		return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(calendar.getTime());
 	}
 
-	public List<NetflowRecord> getAbnormalRawRecord(String abnormalId) {
+	public List<NetflowRecord> getBackwardAbnormalRawRecord(String abnormalId) {
 		List<NetflowRecord> ret = new ArrayList<NetflowRecord>();
 		try {
 			Connection conn = DBConnector.getConn();
 			Statement statement = conn.createStatement();
-			String sql = LOAD_ABNORMAL_RAW_RECORDS.replace("@", abnormalId);
+			String sql = LOAD_BACKWARD_ABNORMAL_RAW_RECORDS.replace("@", abnormalId);
 			
 			ResultSet rs = statement.executeQuery(sql);
 			while(rs.next()){
@@ -189,13 +189,13 @@ public class MysqlStorageManager implements StorageManager{
 		return ret;
 	}
 
-	public List<RealtimeIndicatorsVO> getAbnormalRealtimeIndicators(String abnormalId) {
+	public List<RealtimeIndicatorsVO> getBackwardAbnormalRealtimeIndicators(String abnormalId) {
 		List<RealtimeIndicatorsVO> ret = new ArrayList<RealtimeIndicatorsVO>();
 		
 		try {
 			Connection conn = DBConnector.getConn();
 			Statement statement = conn.createStatement();
-			String sql = LOAD_ABNORMAL_INDICATORS.replace("@", abnormalId);
+			String sql = LOAD_BACKWARD_ABNORMAL_INDICATORS.replace("@", abnormalId);
 			ResultSet rs = statement.executeQuery(sql);
 			
 			while(rs.next()){
@@ -222,11 +222,11 @@ public class MysqlStorageManager implements StorageManager{
 		return ret;
 	}
 
-	public void unmarkRawRecordById(String id) {
+	public void unmarkBackwardRawRecordById(String id) {
 		try {
 			Connection conn = DBConnector.getConn();
 			Statement statement = conn.createStatement();
-			String sql = UNMARK_RAW_RECORD_BY_ID.replace("@", id);
+			String sql = UNMARK_BACKWARD_RAW_RECORD_BY_ID.replace("@", id);
 			statement.execute(sql);
 			
 			DBConnector.closeConn(conn, statement, null);
@@ -243,11 +243,11 @@ public class MysqlStorageManager implements StorageManager{
 		}
 	}
 
-	public void unmarkRealtimeIndicatorsById(String id) {
+	public void unmarkBackwardRealtimeIndicatorsById(String id) {
 		try {
 			Connection conn = DBConnector.getConn();
 			Statement statement = conn.createStatement();
-			String sql = UNMARK_REALTIME_INDICATORS_BY_ID.replace("@", id);
+			String sql = UNMARK_BACKWARD_REALTIME_INDICATORS_BY_ID.replace("@", id);
 			statement.execute(sql);
 			
 			DBConnector.closeConn(conn, statement, null);
@@ -265,11 +265,11 @@ public class MysqlStorageManager implements StorageManager{
 	}
 
 
-	public void unmarkRawRecordByInterval(String beginTime, String endTime, String id) {
+	public void unmarkBackwardRawRecordByInterval(String beginTime, String endTime, String id) {
 		try {
 			Connection conn = DBConnector.getConn();
 			Statement statement = conn.createStatement();
-			String sql = UNMARK_RAW_RECORD_BY_INTERVAL.replace("@", beginTime).replace("#", endTime).replace("$", id);
+			String sql = UNMARK_BACKWARD_RAW_RECORD_BY_INTERVAL.replace("@", beginTime).replace("#", endTime).replace("$", id);
 			statement.execute(sql);
 			
 			DBConnector.closeConn(conn, statement, null);
@@ -286,11 +286,11 @@ public class MysqlStorageManager implements StorageManager{
 		}
 	}
 
-	public void unmarkRealtimeIndicatorsByInterval(String beginTime, String endTime, String id) {
+	public void unmarkBackwardRealtimeIndicatorsByInterval(String beginTime, String endTime, String id) {
 		try {
 			Connection conn = DBConnector.getConn();
 			Statement statement = conn.createStatement();
-			String sql = UNMARK_REALTIME_INDICATORS_BY_INTERVAL.replace("@", beginTime).replace("#", endTime).replace("$", id);
+			String sql = UNMARK_BACKWARD_REALTIME_INDICATORS_BY_INTERVAL.replace("@", beginTime).replace("#", endTime).replace("$", id);
 			statement.execute(sql);
 			
 			DBConnector.closeConn(conn, statement, null);
@@ -364,12 +364,12 @@ public class MysqlStorageManager implements StorageManager{
 	}
 
 	@Override
-	public List<NetflowRecord> getRawRecordByInterval(String beginTime, String endTime) {
+	public List<NetflowRecord> getBackwardRawRecordByInterval(String beginTime, String endTime) {
 		List<NetflowRecord> ret = new ArrayList<NetflowRecord>();
 		try {
 			Connection conn = DBConnector.getConn();
 			Statement statement = conn.createStatement();
-			String sql = LOAD_RAW_RECORDS_BY_INTERVAL.replace("@", beginTime).replace("#", endTime);
+			String sql = LOAD_BACKWARD_RAW_RECORDS_BY_INTERVAL.replace("@", beginTime).replace("#", endTime);
 			ResultSet rs = statement.executeQuery(sql);
 			
 			while(rs.next()){
@@ -389,13 +389,13 @@ public class MysqlStorageManager implements StorageManager{
 	}
 
 	@Override
-	public List<RealtimeIndicatorsVO> getRealtimeIndicatorsByInterval(String beginTime, String endTime) {
+	public List<RealtimeIndicatorsVO> getBackwardRealtimeIndicatorsByInterval(String beginTime, String endTime) {
 		List<RealtimeIndicatorsVO> ret = new ArrayList<RealtimeIndicatorsVO>();
 		
 		try {
 			Connection conn = DBConnector.getConn();
 			Statement statement = conn.createStatement();
-			String sql = LOAD_ABNORMAL_INDICATORS_BY_INTERVAL.replace("@", beginTime).replace("#", endTime);
+			String sql = LOAD_BACKWARD_ABNORMAL_INDICATORS_BY_INTERVAL.replace("@", beginTime).replace("#", endTime);
 			ResultSet rs = statement.executeQuery(sql);
 			
 			while(rs.next()){
@@ -423,6 +423,19 @@ public class MysqlStorageManager implements StorageManager{
 	}
 
 	@Override
+	public void doClean(String sql) {
+		try {
+			Connection conn = DBConnector.getConn();
+			Statement statement = conn.createStatement();
+			statement.execute(sql);
+			
+			DBConnector.closeConn(conn, statement, null);
+		} catch (Exception e) {
+			// TODO: handle exception
+		}
+	}
+
+	/*@Override
 	public void addTmpTrafficRecord(AbnormalTrafficRecord r) {
 		try {
 			Connection conn = DBConnector.getConn();
@@ -475,6 +488,6 @@ public class MysqlStorageManager implements StorageManager{
 		} catch (Exception e) {
 			// TODO: handle exception
 		}
-	}
+	}*/
 
 }

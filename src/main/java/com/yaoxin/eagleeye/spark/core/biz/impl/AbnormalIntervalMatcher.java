@@ -1,4 +1,4 @@
-package com.yaoxin.eagleeye.spark.core;
+package com.yaoxin.eagleeye.spark.core.biz.impl;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
@@ -16,6 +16,7 @@ import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFunction;
 
+import com.yaoxin.eagleeye.spark.core.biz.BusinessLogic;
 import com.yaoxin.eagleeye.spark.storage.StorageManager;
 import com.yaoxin.eagleeye.spark.storage.impl.MysqlStorageManager;
 import com.yaoxin.eagleeye.spark.util.BpfComparator;
@@ -41,37 +42,40 @@ import scala.Tuple2;
  * 
  * 2015年11月6日
  */
-public class AbnormalIntervalMatcher {
+public class AbnormalIntervalMatcher implements BusinessLogic{
 	
 	public final static double START_POINT_THRESHOLD = 1.0;
 	public final static double END_POINT_THRESHOLD = 1.0;
 	public final static String ABNORMAL_RECORD_ID_PREFIX = "abnormal.";
 	public final static int LONG_INTERVAL_THRESHOLD = 3;
+	public final static SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+	public final static int TIMEOUT = 15;
 	
 	private StorageManager storageManager = new MysqlStorageManager();
-	
 	private AbnormalIntervalEdgeDetector edgeDetector = new AbnormalIntervalEdgeDetector();
-	private SuspiciousAbnormalIntervalEdge latestStartEdge; // 缓存可疑异常区间的起始端点(对该变量的最新策略如下)
+	
+	private SuspiciousAbnormalIntervalEdge latestStartEdge; // 缓存可疑异常区间的起始端点(对该变量的最新策略参考下面的代码实现)
 	private SuspiciousAbnormalIntervalEdge tmpEndEdge;  // 缓存下降幅度最大的端点(存在可疑左端点的情况下), 防止出现时间跨度过长的异常区间
 	private Date lastTimeWindow;
 	private String currentAbnormalId ;
-	private boolean forceOutputInterval = false;
 
-	
+	@Override
 	public void schedule(JavaSparkContext ctx){
-		RealtimeIndicatorsVO vo = this.storageManager.getRealtimeIndicator();
+		// 取最新一条realtime indicators
+		// 该检测算法关注网络实时指标的波动情况, 由于目标网段的出口流量和入口流量不经过同一个网关, 很可能两个方向的负载不同,
+		// 所以不能将二者混在一起. 
+		// 当前只根据入口流量指标判断网络是否存在异常状态
+		RealtimeIndicatorsVO vo = this.storageManager.getBackwardRealtimeIndicator();
 		
 		if(vo != null && isNewItem(vo)){
-			
-			trunckLongInterval(vo.getTimeFrame());
 
 			// 判断是否为异常区间的端点
 			Judgement result = this.edgeDetector.doJudge(vo);
 			
-			if(this.forceOutputInterval){
-				processAbnormalInterval(result, ctx);
+			
+			if(truncateLongInterval(vo.getTimeFrame())){
+				processAbnormalInterval(this.tmpEndEdge, result, ctx);
 				
-				cleanupStatus();
 			}
 			else if(result.getDirection() == Direction.LOW_2_HIGH){
 				
@@ -81,37 +85,42 @@ public class AbnormalIntervalMatcher {
 				
 				if(this.latestStartEdge != null){
 					// 若存在左端点, 则对当前time frame进行标记, 将其原始netflow数据和indicators都存下来
-					this.storageManager.markRawRecord(vo.getTimeFrame(), this.currentAbnormalId);
-					this.storageManager.markRealtimeIndicators(vo.getTimeFrame(), this.currentAbnormalId);
+					this.storageManager.markBackwardRawRecord(vo.getTimeFrame(), this.currentAbnormalId);
+					this.storageManager.markBackwardRealtimeIndicators(vo.getTimeFrame(), this.currentAbnormalId);
 					
 				}
 			}
 			else if(result.getDirection() == Direction.HIGH_2_LOW){
 				if(this.latestStartEdge != null){
 					// 若存在左端点, 则对当前time frame进行标记, 将其原始netflow数据和indicators都存下来
-					this.storageManager.markRawRecord(vo.getTimeFrame(), this.currentAbnormalId);
-					this.storageManager.markRealtimeIndicators(vo.getTimeFrame(), this.currentAbnormalId);
-				}
-				
-				if(this.tmpEndEdge == null || this.tmpEndEdge.getJudgement().getPriority() < result.getPriority()){
-					SuspiciousAbnormalIntervalEdge newEnd = new SuspiciousAbnormalIntervalEdge();
-					newEnd.setTimeFrame(vo.getTimeFrame());
-					newEnd.setEdgeType(AbnormalIntervalEdgeType.END_POINT);
-					newEnd.setIndicators(vo);
-					newEnd.setJudgement(result);
+					this.storageManager.markBackwardRawRecord(vo.getTimeFrame(), this.currentAbnormalId);
+					this.storageManager.markBackwardRealtimeIndicators(vo.getTimeFrame(), this.currentAbnormalId);
 					
-					this.tmpEndEdge = newEnd;
-				}	
-				
-				if(result.getDeviationRatio() >= END_POINT_THRESHOLD){
-					processAbnormalInterval(result, ctx);
+					if(this.tmpEndEdge == null || this.tmpEndEdge.getJudgement().getPriority() < result.getPriority()){
+						SuspiciousAbnormalIntervalEdge newEnd = new SuspiciousAbnormalIntervalEdge();
+						newEnd.setTimeFrame(vo.getTimeFrame());
+						newEnd.setEdgeType(AbnormalIntervalEdgeType.END_POINT);
+						newEnd.setIndicators(vo);
+						newEnd.setJudgement(result);
+						
+						this.tmpEndEdge = newEnd;
+					}
 					
-					cleanupStatus();
+					if(result.getDeviationRatio() >= END_POINT_THRESHOLD){
+						SuspiciousAbnormalIntervalEdge endPoint = new SuspiciousAbnormalIntervalEdge();
+						endPoint.setTimeFrame(vo.getTimeFrame());
+						endPoint.setEdgeType(AbnormalIntervalEdgeType.END_POINT);
+						endPoint.setIndicators(vo);
+						endPoint.setJudgement(result);
+						
+						processAbnormalInterval(endPoint, result, ctx);
+
+					}
 				}
 
 			}
 			
-			processHalfHourIntervalIfNecessary(result, ctx);
+			//processHalfHourIntervalIfNecessary(result, ctx);
 		}
 	}
 	
@@ -122,8 +131,8 @@ public class AbnormalIntervalMatcher {
 					|| this.latestStartEdge.getJudgement().getPriority() < judgement.getPriority()){
 				
 				if(this.currentAbnormalId != null && this.latestStartEdge != null){
-					this.storageManager.unmarkRawRecordById(currentAbnormalId);
-					this.storageManager.unmarkRealtimeIndicatorsById(currentAbnormalId);
+					this.storageManager.unmarkBackwardRawRecordById(currentAbnormalId);
+					this.storageManager.unmarkBackwardRealtimeIndicatorsById(currentAbnormalId);
 				}
 				
 				SuspiciousAbnormalIntervalEdge edge = new SuspiciousAbnormalIntervalEdge();
@@ -134,7 +143,7 @@ public class AbnormalIntervalMatcher {
 				
 				// 将当前time frame标记为异常起始端点
 				this.latestStartEdge = edge;
-				Date tmp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(edge.getTimeFrame());
+				Date tmp = sdf.parse(edge.getTimeFrame());
 				this.currentAbnormalId = ABNORMAL_RECORD_ID_PREFIX + new SimpleDateFormat("yyyyMMddHHmm").format(tmp);
 			}
 		} catch (ParseException e) {
@@ -153,21 +162,26 @@ public class AbnormalIntervalMatcher {
 		
 	}
 	
-	void processAbnormalInterval(Judgement judgement, JavaSparkContext ctx){
+	void processAbnormalInterval(SuspiciousAbnormalIntervalEdge endPoint, Judgement judgement, JavaSparkContext ctx){
 		if(this.latestStartEdge != null && this.currentAbnormalId != null){
 			// 将所有数据从mysql中读取出来然后调用parallelize转化成RDD, 这种方案的潜在问题是数据量较大时一次性
 			// 把所有原始数据加载到内存之后可能会引起OOM异常... 
 			// 所以必要时可以把相关数据写入HDFS或local file system中, 然后指定HDFS为Spark的数据源 
 			// or 设置worker内存大小和jvm参数来避免OOM
-			List<NetflowRecord> rawRecords = this.storageManager.getAbnormalRawRecord(currentAbnormalId);
-			List<RealtimeIndicatorsVO> vos = this.storageManager.getAbnormalRealtimeIndicators(currentAbnormalId);
+			List<NetflowRecord> rawRecords = this.storageManager.getBackwardAbnormalRawRecord(currentAbnormalId);
+			List<RealtimeIndicatorsVO> vos = this.storageManager.getBackwardAbnormalRealtimeIndicators(currentAbnormalId);
 			
-			calculateAndSaveResult(rawRecords, vos, judgement, ctx);
+			AbnormalTrafficRecord record = calculateWithSpark(rawRecords, vos, judgement, ctx, endPoint);
+			
+			// 将结果写入mysql
+			this.storageManager.addAbnormalRecord(record);
+			
+			removeStatus();
 		}
 	}
 	
 	
-	void processHalfHourIntervalIfNecessary(Judgement judgement, JavaSparkContext ctx){
+	/*void processHalfHourIntervalIfNecessary(Judgement judgement, JavaSparkContext ctx){
 		try {
 			String now = new SimpleDateFormat("HH:mm").format(lastTimeWindow);
 			
@@ -186,17 +200,21 @@ public class AbnormalIntervalMatcher {
 				List<NetflowRecord> rawRecords = this.storageManager.getRawRecordByInterval(beginTime, endTime);
 				List<RealtimeIndicatorsVO> vos = this.storageManager.getRealtimeIndicatorsByInterval(beginTime, endTime);
 				
-				calculateAndSaveResult(rawRecords, vos, judgement, ctx);
+				AbnormalTrafficRecord record = calculateWithSpark(rawRecords, vos, judgement, ctx);
+				
+				this.storageManager.addTmpTrafficRecord(record);
+				
 			}
 			
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-	}
+	}*/
 	
 	
-	void calculateAndSaveResult(List<NetflowRecord> r, List<RealtimeIndicatorsVO> v, Judgement judgement, JavaSparkContext ctx){
+	AbnormalTrafficRecord calculateWithSpark(List<NetflowRecord> r, List<RealtimeIndicatorsVO> v, 
+			Judgement judgement, JavaSparkContext ctx, SuspiciousAbnormalIntervalEdge endPoint){
 		try {
 			
 			JavaRDD<NetflowRecord> raw = ctx.parallelize(r);
@@ -335,26 +353,16 @@ public class AbnormalIntervalMatcher {
 				}
 			});
 			
-			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 			
 			AbnormalTrafficRecord record = new AbnormalTrafficRecord();
-			record.setId(currentAbnormalId);
+			record.setId(currentAbnormalId); // id字段只对异常区间有效
 			record.setStartTime(this.latestStartEdge.getTimeFrame());
 			
-			if(this.forceOutputInterval){
-				record.setEndTime(this.tmpEndEdge.getTimeFrame());
-				long diff = sdf.parse(this.tmpEndEdge.getTimeFrame()).getTime() - sdf.parse(this.latestStartEdge.getTimeFrame()).getTime();
-				double secs = diff / 1000;
-				record.setDuration(secs + "s");
-				record.setEndPointDeviationRatio(this.tmpEndEdge.getJudgement().getDeviationRatio());
-			}
-			else{
-				record.setEndTime(sdf.format(this.lastTimeWindow));
-				long diff = this.lastTimeWindow.getTime() - sdf.parse(this.latestStartEdge.getTimeFrame()).getTime();
-				double secs = diff / 1000;
-				record.setDuration(secs + "s");
-				record.setEndPointDeviationRatio(judgement.getDeviationRatio());
-			}
+			record.setEndTime(endPoint.getTimeFrame());
+			long diff = sdf.parse(endPoint.getTimeFrame()).getTime() - sdf.parse(this.latestStartEdge.getTimeFrame()).getTime();
+			double secs = diff / 1000;
+			record.setDuration(secs + "s");
+			record.setEndPointDeviationRatio(endPoint.getJudgement().getDeviationRatio());
 			
 			record.setStartPointDeviationRatio(this.latestStartEdge.getJudgement().getDeviationRatio());
 			record.setPriority("xxxxx");
@@ -397,29 +405,33 @@ public class AbnormalIntervalMatcher {
 			record.setDurationLessThan10(interval.getDurationLessThan10());
 			record.setDurationLargeThan10(interval.getDurationLargeThan10());
 			
-			// 将结果写入mysql
-			this.storageManager.addAbnormalRecord(record);
+			return record;
 			
 		} catch (Exception e) {
 			e.printStackTrace();
 			
 		}
+		return null;
 	}
 	
 	boolean isNewItem(RealtimeIndicatorsVO vo){
 		try {
 			
-			Date rc = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(vo.getTimeFrame());
+			Date rc = sdf.parse(vo.getTimeFrame());
 
+			if(this.lastTimeWindow == null){
+				this.lastTimeWindow = rc;
+				return true;
+			}
+			
 			// 丢弃所有旧数据
-			if(this.lastTimeWindow == null || this.lastTimeWindow.before(rc)){
+			if(this.lastTimeWindow.before(rc)){
 				
 				long diff = rc.getTime() - this.lastTimeWindow.getTime();
 				double minutes = diff / 60000;
-				if(minutes >= 15){
+				if(minutes >= TIMEOUT){
 					// 如果网络不稳定造成15分钟以上的数据丢失现象, 那么强制更新缓存, 丢弃之前的状态
-					this.currentAbnormalId = null;
-					this.latestStartEdge = null;
+					removeStatus();
 				}
 				
 				this.lastTimeWindow = rc;
@@ -435,11 +447,10 @@ public class AbnormalIntervalMatcher {
 	}
 	
 	
-	void trunckLongInterval(String timeFrame){
+	boolean truncateLongInterval(String timeFrame){
 		try {
 			
 			if(this.latestStartEdge != null){
-				SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
 				Date now = sdf.parse(timeFrame);
 				Date begin = sdf.parse(this.latestStartEdge.getTimeFrame());
@@ -448,7 +459,6 @@ public class AbnormalIntervalMatcher {
 				
 				// 强制关闭长度超过LONG_INTERVAL_THRESHOLD小时的异常区间
 				if(hours > LONG_INTERVAL_THRESHOLD && this.tmpEndEdge != null){
-					this.forceOutputInterval = true;
 
 					// 清除标记
 					Calendar startTime = Calendar.getInstance();
@@ -459,22 +469,34 @@ public class AbnormalIntervalMatcher {
 					endTime.setTime(now);
 					endTime.add(Calendar.MINUTE, 1);
 					
-					this.storageManager.unmarkRawRecordByInterval(sdf.format(startTime.getTime()), 
+					this.storageManager.unmarkBackwardRawRecordByInterval(sdf.format(startTime.getTime()), 
 							sdf.format(endTime.getTime()), currentAbnormalId);
-					this.storageManager.unmarkRealtimeIndicatorsByInterval(sdf.format(startTime.getTime()), 
+					this.storageManager.unmarkBackwardRealtimeIndicatorsByInterval(sdf.format(startTime.getTime()), 
 							sdf.format(endTime.getTime()), currentAbnormalId);
+					
+					return true;
 				}
 			}
 			
 		} catch (Exception e) {
 			// TODO: handle exception
 		}
+		return false;
 	}
 	
-	void cleanupStatus(){
-		this.forceOutputInterval = false;
+	@Override
+	public void prepare() {
+		
+	}
+
+	public void removeStatus(){
 		this.tmpEndEdge = null;
 		this.currentAbnormalId = null;
 		this.latestStartEdge = null;
+	}
+	
+	@Override
+	public void cleanup() {
+		removeStatus();
 	}
 }
